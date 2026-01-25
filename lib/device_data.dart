@@ -25,28 +25,26 @@ class DeviceManager extends ChangeNotifier {
   factory DeviceManager() => _instance;
   DeviceManager._internal();
 
-  // Dữ liệu mẫu
-  final List<SmartDevice> devices = [
-    SmartDevice(
-      id: 'light_1',
-      name: 'Đèn Trần',
-      icon: Icons.lightbulb, // Icon chuẩn
-      isOn: true,
-      color: Colors.amber,
-      position: '-2.7m 1.2m 1.1m',
-    ),
-  ];
+  // FIX: Để danh sách rỗng ban đầu (Xóa bóng đèn mẫu)
+  final List<SmartDevice> devices = [];
 
+  // FIX: Sửa hàm getDevice để không bị lỗi khi danh sách rỗng
   SmartDevice getDevice(String id) {
+    if (devices.isEmpty) {
+      // Trả về thiết bị ảo để tránh crash app nếu lỡ gọi
+      return SmartDevice(id: 'dummy', name: 'None', icon: Icons.error);
+    }
     return devices.firstWhere((d) => d.id == id, orElse: () => devices[0]);
   }
 
   void toggleDevice(String id, bool value) {
+    if (devices.isEmpty) return;
     getDevice(id).isOn = value;
     notifyListeners();
   }
 
   void changeColor(String id, Color newColor) {
+    if (devices.isEmpty) return;
     getDevice(id).color = newColor;
     notifyListeners();
   }

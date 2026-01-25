@@ -4,13 +4,11 @@ import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'device_data.dart';
 
-// Class này không cần chứa SVG nữa, chỉ cần khai báo cho đúng cú pháp
+// --- KHO ẢNH 3D (TÊN ICON GOOGLE) ---
 class SmartIcons {
-  // Thay vì mã SVG, chúng ta dùng TÊN chuẩn của Google Material Icons
-  // Tra cứu tên tại: https://fonts.google.com/icons
   static const String bulb = 'lightbulb';
-  static const String fan = 'toys'; 
-  static const String heater = 'wb_sunny'; 
+  static const String fan = 'cyclone'; 
+  static const String heater = 'thermostat'; 
   static const String curtain = 'view_headline';
   static const String door = 'meeting_room';
   static const String ac = 'ac_unit';
@@ -23,7 +21,10 @@ class SmartHotspot {
   final String position;
   final String normal;
   final SmartPanelBuilder panelBuilder;
-  final String iconName; // Đổi tên biến từ svgIcon thành iconName
+  
+  // FIX LỖI ẢNH 3: Thêm biến iconName vào đây để Main gọi được
+  final String iconName; 
+  
   final Color color;
 
   SmartHotspot({
@@ -31,7 +32,10 @@ class SmartHotspot {
     required this.position,
     this.normal = '0m 1m 0m',
     required this.panelBuilder,
-    this.iconName = 'lightbulb', // Mặc định là tên icon đèn
+    
+    // Mặc định là đèn nếu không truyền
+    this.iconName = 'lightbulb', 
+    
     this.color = Colors.blueAccent,
   });
 }
@@ -81,98 +85,39 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
     deviceManager.removeListener(_onDeviceChanged);
     super.dispose();
   }
-
+  
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Stack(
-          children: [
-            Listener(
-              onPointerDown: (_) {
-                if (isPanelVisible) setState(() => isPanelVisible = false);
-              },
-              child: ModelViewer(
-                key: ValueKey(widget.hotspots.length),
-                src: widget.src,
-                alt: "Smart Home",
-                backgroundColor: Colors.black,
-                autoRotate: false,
-                cameraControls: true,
-                disableZoom: true,
-                onWebViewCreated: (c) {
-                  _webController = c;
-                  Future.delayed(const Duration(seconds: 1), _onDeviceChanged);
-                },
-                innerModelViewerHtml: _generateHtml(),
-                javascriptChannels: {
-                  JavascriptChannel(
-                    'SmartLib',
-                    onMessageReceived: (message) {
-                      try {
-                        final data = jsonDecode(message.message);
-                        if (data['type'] == 'hotspot') {
-                          setState(() {
-                            activeHotspotId = data['id'];
-                            panelPosition = Offset(data['x'].toDouble(), data['y'].toDouble() + widget.yOffset);
-                            isPanelVisible = true;
-                          });
-                        } else if (data['type'] == 'model') {
-                          if (widget.onModelTap != null) {
-                            widget.onModelTap!(data['position'], data['normal']);
-                          }
-                        }
-                      } catch (e) { debugPrint("JS Error: $e"); }
-                    },
-                  ),
-                },
-              ),
-            ),
-            if (isPanelVisible && activeHotspotId != null)
-              _buildOverlayPanel(constraints),
-          ],
-        );
-      },
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      return Stack(children: [
+        Listener(
+          onPointerDown: (_) { if (isPanelVisible) setState(() => isPanelVisible = false); },
+          child: ModelViewer(
+            key: ValueKey(widget.hotspots.length),
+            src: widget.src,
+            alt: "Smart Home",
+            backgroundColor: Colors.black,
+            autoRotate: false,
+            
+            // Mở khóa Zoom và Di chuyển
+            cameraControls: true, 
+            disableZoom: false,
+            disablePan: false,
+
+            onWebViewCreated: (c) { _webController = c; Future.delayed(const Duration(seconds: 1), _onDeviceChanged); },
+            innerModelViewerHtml: _generateHtml(),
+            javascriptChannels: { JavascriptChannel('SmartLib', onMessageReceived: (message) { try { final data = jsonDecode(message.message); if (data['type'] == 'hotspot') { setState(() { activeHotspotId = data['id']; panelPosition = Offset(data['x'].toDouble(), data['y'].toDouble() + widget.yOffset); isPanelVisible = true; }); } else if (data['type'] == 'model') { if (widget.onModelTap != null) { widget.onModelTap!(data['position'], data['normal']); } } } catch (e) { debugPrint("JS Error: $e"); } }) },
+          ),
+        ),
+        if (isPanelVisible && activeHotspotId != null) _buildOverlayPanel(constraints),
+      ]);
+    });
   }
 
   Widget _buildOverlayPanel(BoxConstraints constraints) {
     final hotspot = widget.hotspots.firstWhere((h) => h.id == activeHotspotId, orElse: () => widget.hotspots[0]);
-    const double panelWidth = 280;
-    double panelLeft = panelPosition.dx - (panelWidth / 2);
-    if (panelLeft < 10) panelLeft = 10;
-    if (panelLeft + panelWidth > constraints.maxWidth - 10) panelLeft = constraints.maxWidth - panelWidth - 10;
-    bool showBelow = panelPosition.dy < 200; 
-    double? posTop; double? posBottom;
-    if (showBelow) { posTop = panelPosition.dy + 40; } else { posBottom = constraints.maxHeight - panelPosition.dy + 15; }
-    double arrowLocalX = panelPosition.dx - panelLeft;
-    if (arrowLocalX < 24) arrowLocalX = 24; if (arrowLocalX > panelWidth - 24) arrowLocalX = panelWidth - 24;
-
-    return Positioned(
-      top: posTop, bottom: posBottom, left: panelLeft,
-      child: GestureDetector(
-        onTap: () {}, 
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0.0, end: 1.0),
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutBack,
-          builder: (context, value, child) => Transform.scale(scale: value, alignment: Alignment(((arrowLocalX / panelWidth) * 2) - 1, showBelow ? -1.0 : 1.0), child: child),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              hotspot.panelBuilder(context, 
-                (bool isOn) { _webController?.runJavaScript("setHotspotState('${hotspot.id}', $isOn)"); },
-                (Color c) { String hex = '#${c.value.toRadixString(16).substring(2)}'; _webController?.runJavaScript("setHotspotColor('${hotspot.id}', '$hex')"); }
-              ),
-              Positioned(
-                bottom: showBelow ? null : -9, top: showBelow ? -9 : null, left: arrowLocalX - 10,
-                child: CustomPaint(size: const Size(20, 10), painter: _ArrowPainter(color: Colors.white.withValues(alpha: 0.9), isPointingUp: showBelow)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    const double panelWidth = 280; double panelLeft = panelPosition.dx - (panelWidth / 2); if (panelLeft < 10) panelLeft = 10; if (panelLeft + panelWidth > constraints.maxWidth - 10) panelLeft = constraints.maxWidth - panelWidth - 10; bool showBelow = panelPosition.dy < 200; double? posTop; double? posBottom; if (showBelow) { posTop = panelPosition.dy + 40; } else { posBottom = constraints.maxHeight - panelPosition.dy + 15; } double arrowLocalX = panelPosition.dx - panelLeft; if (arrowLocalX < 24) arrowLocalX = 24; if (arrowLocalX > panelWidth - 24) arrowLocalX = panelWidth - 24;
+    return Positioned(top: posTop, bottom: posBottom, left: panelLeft, child: GestureDetector(onTap: () {}, child: TweenAnimationBuilder<double>(tween: Tween(begin: 0.0, end: 1.0), duration: const Duration(milliseconds: 250), curve: Curves.easeOutBack, builder: (context, value, child) => Transform.scale(scale: value, alignment: Alignment(((arrowLocalX / panelWidth) * 2) - 1, showBelow ? -1.0 : 1.0), child: child), child: Stack(clipBehavior: Clip.none, children: [hotspot.panelBuilder(context, (bool isOn) { _webController?.runJavaScript("setHotspotState('${hotspot.id}', $isOn)"); }, (Color c) { String hex = '#${c.value.toRadixString(16).substring(2)}'; _webController?.runJavaScript("setHotspotColor('${hotspot.id}', '$hex')"); }), Positioned(bottom: showBelow ? null : -9, top: showBelow ? -9 : null, left: arrowLocalX - 10, child: CustomPaint(size: const Size(20, 10), painter: _ArrowPainter(color: Colors.white.withValues(alpha: 0.9), isPointingUp: showBelow)))]))));
   }
 
   String _generateHtml() {
@@ -182,8 +127,7 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
       String hexColor = '#${device.color.value.toRadixString(16).substring(2)}';
       String initialClass = device.isOn ? "droplet" : "droplet off";
       
-      // THAY ĐỔI: Dùng thẻ span class="material-icons" thay vì thẻ svg
-      // iconName sẽ là 'lightbulb', 'toys', v.v...
+      // Dùng iconName thay vì svgIcon
       buttonsHtml += """
         <button slot="hotspot-${h.id}" 
                 data-position="${h.position}" data-normal="${h.normal}"
@@ -193,11 +137,9 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
                 <div id="droplet-${h.id}" class="$initialClass" 
                      data-original-color="$hexColor"
                      style="background-color: rgba(255,255,255,0.95); box-shadow: 0 4px 15px ${hexColor}80;">
-                    
                     <span class="material-icons icon-wrapper" style="color: $hexColor; font-size: 20px;">
                         ${h.iconName}
                     </span>
-
                 </div>
                 <div id="pulse-${h.id}" class="pulse-ring" style="border-color: $hexColor"></div>
             </div>
@@ -205,29 +147,21 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
       """;
     }
 
-    // THAY ĐỔI: Nhúng link Google Fonts vào phần head
     return """
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-      
       <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-
       <style>
         .droplet-container { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%) translateY(-10px); width: 40px; height: 50px; display: flex; justify-content: center; cursor: pointer; }
         .droplet-container:active { transform: translateX(-50%) translateY(-10px) scale(0.9); }
         .droplet { width: 36px; height: 36px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); display: flex; align-items: center; justify-content: center; border: 2px solid white; transition: background-color 0.3s, box-shadow 0.3s; }
-        
-        /* Chỉnh lại xoay cho Icon Font */
         .icon-wrapper { transform: rotate(45deg); transition: color 0.3s; line-height: 1; display: block; }
-        
         .pulse-ring { position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); width: 10px; height: 4px; border-radius: 50%; border: 2px solid; opacity: 0.6; animation: pulse 2s infinite; }
         .droplet.off { background-color: #444 !important; box-shadow: none !important; border-color: #666; }
         .droplet.off .icon-wrapper { color: #888 !important; }
         .pulse-ring.off { display: none; }
         @keyframes pulse { 0% { transform: translateX(-50%) scale(0.5); opacity: 1; } 100% { transform: translateX(-50%) scale(2.5); opacity: 0; } }
       </style>
-      
       $buttonsHtml
-      
       <script>
         const modelViewer = document.querySelector('model-viewer');
         modelViewer.addEventListener('click', (event) => { let hit = modelViewer.positionAndNormalFromPoint(event.clientX, event.clientY); if (hit != null) { var data = { type: 'model', position: hit.position.toString(), normal: hit.normal.toString() }; SmartLib.postMessage(JSON.stringify(data)); } }, true);
@@ -238,4 +172,5 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
     """;
   }
 }
+
 class _ArrowPainter extends CustomPainter { final Color color; final bool isPointingUp; _ArrowPainter({required this.color, required this.isPointingUp}); @override void paint(Canvas canvas, Size size) { final paint = Paint()..color = color..style = PaintingStyle.fill; final path = Path(); if (isPointingUp) { path.moveTo(0, size.height); path.lineTo(size.width / 2, 0); path.lineTo(size.width, size.height); } else { path.moveTo(0, 0); path.lineTo(size.width / 2, size.height); path.lineTo(size.width, 0); } path.close(); canvas.drawPath(path, paint); } @override bool shouldRepaint(covariant CustomPainter oldDelegate) => false; }
