@@ -21,10 +21,7 @@ class SmartHotspot {
   final String position;
   final String normal;
   final SmartPanelBuilder panelBuilder;
-  
-  // FIX LỖI ẢNH 3: Thêm biến iconName vào đây để Main gọi được
   final String iconName; 
-  
   final Color color;
 
   SmartHotspot({
@@ -32,10 +29,7 @@ class SmartHotspot {
     required this.position,
     this.normal = '0m 1m 0m',
     required this.panelBuilder,
-    
-    // Mặc định là đèn nếu không truyền
     this.iconName = 'lightbulb', 
-    
     this.color = Colors.blueAccent,
   });
 }
@@ -99,7 +93,7 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
             backgroundColor: Colors.black,
             autoRotate: false,
             
-            // Mở khóa Zoom và Di chuyển
+            // Camera Controls
             cameraControls: true, 
             disableZoom: false,
             disablePan: false,
@@ -127,7 +121,6 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
       String hexColor = '#${device.color.value.toRadixString(16).substring(2)}';
       String initialClass = device.isOn ? "droplet" : "droplet off";
       
-      // Dùng iconName thay vì svgIcon
       buttonsHtml += """
         <button slot="hotspot-${h.id}" 
                 data-position="${h.position}" data-normal="${h.normal}"
@@ -151,8 +144,22 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
       <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
       <style>
-        .droplet-container { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%) translateY(-10px); width: 40px; height: 50px; display: flex; justify-content: center; cursor: pointer; }
-        .droplet-container:active { transform: translateX(-50%) translateY(-10px) scale(0.9); }
+        /* --- SỬA CSS Ở ĐÂY --- */
+        .droplet-container { 
+            position: absolute; 
+            bottom: 0; 
+            left: 50%; 
+            /* Sửa translateY(-10px) thành translateY(5px) để hạ thấp xuống 15px so với trước */
+            transform: translateX(-50%) translateY(5px); 
+            width: 40px; 
+            height: 50px; 
+            display: flex; 
+            justify-content: center; 
+            cursor: pointer; 
+        }
+        /* --------------------- */
+        
+        .droplet-container:active { transform: translateX(-50%) translateY(5px) scale(0.9); }
         .droplet { width: 36px; height: 36px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); display: flex; align-items: center; justify-content: center; border: 2px solid white; transition: background-color 0.3s, box-shadow 0.3s; }
         .icon-wrapper { transform: rotate(45deg); transition: color 0.3s; line-height: 1; display: block; }
         .pulse-ring { position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); width: 10px; height: 4px; border-radius: 50%; border: 2px solid; opacity: 0.6; animation: pulse 2s infinite; }
