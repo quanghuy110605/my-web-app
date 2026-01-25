@@ -4,14 +4,17 @@ import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'device_data.dart';
 
-// --- KHO ẢNH 3D (TÊN ICON GOOGLE) ---
+// --- KHO TÊN ICON GOOGLE ---
 class SmartIcons {
   static const String bulb = 'lightbulb';
   static const String fan = 'cyclone'; 
   static const String heater = 'thermostat'; 
   static const String curtain = 'view_headline';
-  static const String door = 'meeting_room';
   static const String ac = 'ac_unit';
+  static const String doorOpen = 'meeting_room';   
+  static const String doorClosed = 'door_front';   
+  static const String car = 'directions_car';      
+  static const String garageEmpty = 'garage';      
 }
 
 typedef SmartPanelBuilder = Widget Function(BuildContext context, Function(bool) toggle3D, Function(Color) changeColor);
@@ -60,11 +63,29 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
 
   void _onDeviceChanged() {
     if (_webController == null) return;
+    
+    // Biến kiểm tra xem có Gara trong danh sách không
+    bool hasGara = false;
+
     for (var hotspot in widget.hotspots) {
       final device = deviceManager.getDevice(hotspot.id);
+      
       _webController!.runJavaScript("setHotspotState('${hotspot.id}', ${device.isOn})");
       String hex = '#${device.color.value.toRadixString(16).substring(2)}';
       _webController!.runJavaScript("setHotspotColor('${hotspot.id}', '$hex')");
+      _webController!.runJavaScript("setHotspotIcon('${hotspot.id}', '${hotspot.iconName}')");
+
+      // XỬ LÝ XE (Nếu tìm thấy thiết bị Gara)
+      if (hotspot.iconName == SmartIcons.car || hotspot.iconName == SmartIcons.garageEmpty) {
+          hasGara = true; 
+          // Tìm thấy Gara -> Gửi lệnh Ẩn/Hiện dựa theo nút bấm
+          _webController!.runJavaScript("setObjectVisibility('Car_Main', ${device.isOn})");
+      }
+    }
+
+    // FIX LỖI: Nếu xóa nút Gara rồi, hoặc chưa thêm nút Gara -> Bắt buộc ẩn xe đi
+    if (!hasGara) {
+       _webController!.runJavaScript("setObjectVisibility('Car_Main', false)");
     }
   }
 
@@ -92,12 +113,9 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
             alt: "Smart Home",
             backgroundColor: Colors.black,
             autoRotate: false,
-            
-            // Camera Controls
             cameraControls: true, 
             disableZoom: false,
             disablePan: false,
-
             onWebViewCreated: (c) { _webController = c; Future.delayed(const Duration(seconds: 1), _onDeviceChanged); },
             innerModelViewerHtml: _generateHtml(),
             javascriptChannels: { JavascriptChannel('SmartLib', onMessageReceived: (message) { try { final data = jsonDecode(message.message); if (data['type'] == 'hotspot') { setState(() { activeHotspotId = data['id']; panelPosition = Offset(data['x'].toDouble(), data['y'].toDouble() + widget.yOffset); isPanelVisible = true; }); } else if (data['type'] == 'model') { if (widget.onModelTap != null) { widget.onModelTap!(data['position'], data['normal']); } } } catch (e) { debugPrint("JS Error: $e"); } }) },
@@ -144,21 +162,7 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
       <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
       <style>
-        /* --- SỬA CSS Ở ĐÂY --- */
-        .droplet-container { 
-            position: absolute; 
-            bottom: 0; 
-            left: 50%; 
-            /* Sửa translateY(-10px) thành translateY(5px) để hạ thấp xuống 15px so với trước */
-            transform: translateX(-50%) translateY(5px); 
-            width: 40px; 
-            height: 50px; 
-            display: flex; 
-            justify-content: center; 
-            cursor: pointer; 
-        }
-        /* --------------------- */
-        
+        .droplet-container { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%) translateY(5px); width: 40px; height: 50px; display: flex; justify-content: center; cursor: pointer; }
         .droplet-container:active { transform: translateX(-50%) translateY(5px) scale(0.9); }
         .droplet { width: 36px; height: 36px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); display: flex; align-items: center; justify-content: center; border: 2px solid white; transition: background-color 0.3s, box-shadow 0.3s; }
         .icon-wrapper { transform: rotate(45deg); transition: color 0.3s; line-height: 1; display: block; }
@@ -175,6 +179,33 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
         function handleClick(event, id, element) { event.stopPropagation(); var rect = element.getBoundingClientRect(); var targetX = rect.left + (rect.width / 2); var targetY = rect.top + (rect.height / 2); var data = { type: 'hotspot', id: id, x: targetX, y: targetY }; SmartLib.postMessage(JSON.stringify(data)); }
         function setHotspotState(id, isOn) { var droplet = document.getElementById('droplet-' + id); var pulse = document.getElementById('pulse-' + id); var icon = droplet.querySelector('.icon-wrapper'); if (droplet) { if (isOn) { droplet.classList.remove('off'); if(pulse) pulse.classList.remove('off'); var originalColor = droplet.getAttribute('data-original-color'); if(icon) icon.style.color = originalColor; droplet.style.boxShadow = '0 4px 15px ' + originalColor + '80'; } else { droplet.classList.add('off'); if(pulse) pulse.classList.add('off'); if(icon) icon.style.color = ''; droplet.style.boxShadow = ''; } } }
         function setHotspotColor(id, colorHex) { var droplet = document.getElementById('droplet-' + id); var pulse = document.getElementById('pulse-' + id); var icon = droplet.querySelector('.icon-wrapper'); if (droplet) { droplet.setAttribute('data-original-color', colorHex); if (!droplet.classList.contains('off')) { if(icon) icon.style.color = colorHex; droplet.style.boxShadow = '0 4px 15px ' + colorHex + '80'; if(pulse) pulse.style.borderColor = colorHex; } } }
+        function setHotspotIcon(id, iconName) { var droplet = document.getElementById('droplet-' + id); if (droplet) { var iconSpan = droplet.querySelector('.material-icons'); if (iconSpan) iconSpan.textContent = iconName; } }
+
+        // --- HÀM ẨN HIỆN XE (ĐÃ FIX LỖI MÀU TRẮNG) ---
+        function setObjectVisibility(materialName, isVisible) {
+           const model = modelViewer.model;
+           if (!model) return;
+
+           const foundMaterial = model.materials.find(m => m.name === materialName);
+           
+           if (foundMaterial) {
+              // FIX LỖI 1: Lấy màu gốc hiện tại của xe (để không bị đổi thành màu trắng)
+              const currentColor = foundMaterial.pbrMetallicRoughness.baseColorFactor;
+              
+              // Chỉ đổi thông số thứ 4 (Alpha)
+              currentColor[3] = isVisible ? 1.0 : 0.0;
+              
+              // Set lại màu đã chỉnh sửa alpha
+              foundMaterial.pbrMetallicRoughness.setBaseColorFactor(currentColor);
+              foundMaterial.setAlphaMode(isVisible ? 'OPAQUE' : 'BLEND');
+           }
+        }
+
+        // FIX LỖI 2: Mặc định khi vừa tải xong file 3D -> ẨN XE NGAY LẬP TỨC
+        modelViewer.addEventListener('load', () => {
+             // Ẩn xe mặc định khi vừa mở app
+             setObjectVisibility('Car_Main', false);
+        });
       </script>
     """;
   }
