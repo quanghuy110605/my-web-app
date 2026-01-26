@@ -4,13 +4,15 @@ import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'device_data.dart';
 
-// --- KHO TÊN ICON GOOGLE ---
+// --- KHO TÊN ICON GOOGLE (MATERIAL ICONS) ---
 class SmartIcons {
   static const String bulb = 'lightbulb';
   static const String fan = 'cyclone'; 
   static const String heater = 'thermostat'; 
   static const String curtain = 'view_headline';
   static const String ac = 'ac_unit';
+  
+  // Icon cho Cửa và Gara
   static const String doorOpen = 'meeting_room';   
   static const String doorClosed = 'door_front';   
   static const String car = 'directions_car';      
@@ -61,29 +63,41 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
   bool isPanelVisible = false;
   WebViewController? _webController;
 
+  // --- HÀM LẮNG NGHE THAY ĐỔI TỪ THIẾT BỊ ---
   void _onDeviceChanged() {
     if (_webController == null) return;
     
-    // Biến kiểm tra xem có Gara trong danh sách không
+    // Biến cờ để kiểm tra xem trong nhà có Gara không
     bool hasGara = false;
 
     for (var hotspot in widget.hotspots) {
       final device = deviceManager.getDevice(hotspot.id);
       
+      // 1. Cập nhật trạng thái Hotspot (Sáng/Tắt)
       _webController!.runJavaScript("setHotspotState('${hotspot.id}', ${device.isOn})");
+      
+      // 2. Cập nhật màu Hotspot
       String hex = '#${device.color.value.toRadixString(16).substring(2)}';
       _webController!.runJavaScript("setHotspotColor('${hotspot.id}', '$hex')");
+      
+      // 3. Cập nhật Icon (Mở/Đóng)
       _webController!.runJavaScript("setHotspotIcon('${hotspot.id}', '${hotspot.iconName}')");
 
-      // XỬ LÝ XE (Nếu tìm thấy thiết bị Gara)
+      // --- 4. XỬ LÝ RIÊNG CHO GARA (XE "Car_Main") ---
       if (hotspot.iconName == SmartIcons.car || hotspot.iconName == SmartIcons.garageEmpty) {
           hasGara = true; 
-          // Tìm thấy Gara -> Gửi lệnh Ẩn/Hiện dựa theo nút bấm
+          
+          // A. Ẩn/Hiện xe (isOn = true -> Hiện, isOn = false -> Ẩn)
           _webController!.runJavaScript("setObjectVisibility('Car_Main', ${device.isOn})");
+          
+          // B. Đổi màu xe (Chỉ đổi khi xe đang hiện)
+          if (device.isOn) {
+             _webController!.runJavaScript("setObjectColor('Car_Main', '$hex')");
+          }
       }
     }
 
-    // FIX LỖI: Nếu xóa nút Gara rồi, hoặc chưa thêm nút Gara -> Bắt buộc ẩn xe đi
+    // Nếu không tìm thấy Gara nào trong danh sách thiết bị -> Ẩn xe đi
     if (!hasGara) {
        _webController!.runJavaScript("setObjectVisibility('Car_Main', false)");
     }
@@ -113,12 +127,41 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
             alt: "Smart Home",
             backgroundColor: Colors.black,
             autoRotate: false,
+            
+            // Cấu hình Camera
             cameraControls: true, 
             disableZoom: false,
             disablePan: false,
-            onWebViewCreated: (c) { _webController = c; Future.delayed(const Duration(seconds: 1), _onDeviceChanged); },
+            
+            // Khi Webview load xong -> Đợi 1s rồi cập nhật trạng thái
+            onWebViewCreated: (c) { 
+              _webController = c; 
+              Future.delayed(const Duration(seconds: 1), _onDeviceChanged); 
+            },
+            
             innerModelViewerHtml: _generateHtml(),
-            javascriptChannels: { JavascriptChannel('SmartLib', onMessageReceived: (message) { try { final data = jsonDecode(message.message); if (data['type'] == 'hotspot') { setState(() { activeHotspotId = data['id']; panelPosition = Offset(data['x'].toDouble(), data['y'].toDouble() + widget.yOffset); isPanelVisible = true; }); } else if (data['type'] == 'model') { if (widget.onModelTap != null) { widget.onModelTap!(data['position'], data['normal']); } } } catch (e) { debugPrint("JS Error: $e"); } }) },
+            
+            // Kênh giao tiếp JS -> Flutter
+            javascriptChannels: { 
+              JavascriptChannel('SmartLib', onMessageReceived: (message) { 
+                try { 
+                  final data = jsonDecode(message.message); 
+                  if (data['type'] == 'hotspot') { 
+                    setState(() { 
+                      activeHotspotId = data['id']; 
+                      panelPosition = Offset(data['x'].toDouble(), data['y'].toDouble() + widget.yOffset); 
+                      isPanelVisible = true; 
+                    }); 
+                  } else if (data['type'] == 'model') { 
+                    if (widget.onModelTap != null) { 
+                      widget.onModelTap!(data['position'], data['normal']); 
+                    } 
+                  } 
+                } catch (e) { 
+                  debugPrint("JS Error: $e"); 
+                } 
+              }) 
+            },
           ),
         ),
         if (isPanelVisible && activeHotspotId != null) _buildOverlayPanel(constraints),
@@ -172,38 +215,114 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
         .pulse-ring.off { display: none; }
         @keyframes pulse { 0% { transform: translateX(-50%) scale(0.5); opacity: 1; } 100% { transform: translateX(-50%) scale(2.5); opacity: 0; } }
       </style>
+      
       $buttonsHtml
+      
       <script>
         const modelViewer = document.querySelector('model-viewer');
-        modelViewer.addEventListener('click', (event) => { let hit = modelViewer.positionAndNormalFromPoint(event.clientX, event.clientY); if (hit != null) { var data = { type: 'model', position: hit.position.toString(), normal: hit.normal.toString() }; SmartLib.postMessage(JSON.stringify(data)); } }, true);
-        function handleClick(event, id, element) { event.stopPropagation(); var rect = element.getBoundingClientRect(); var targetX = rect.left + (rect.width / 2); var targetY = rect.top + (rect.height / 2); var data = { type: 'hotspot', id: id, x: targetX, y: targetY }; SmartLib.postMessage(JSON.stringify(data)); }
-        function setHotspotState(id, isOn) { var droplet = document.getElementById('droplet-' + id); var pulse = document.getElementById('pulse-' + id); var icon = droplet.querySelector('.icon-wrapper'); if (droplet) { if (isOn) { droplet.classList.remove('off'); if(pulse) pulse.classList.remove('off'); var originalColor = droplet.getAttribute('data-original-color'); if(icon) icon.style.color = originalColor; droplet.style.boxShadow = '0 4px 15px ' + originalColor + '80'; } else { droplet.classList.add('off'); if(pulse) pulse.classList.add('off'); if(icon) icon.style.color = ''; droplet.style.boxShadow = ''; } } }
-        function setHotspotColor(id, colorHex) { var droplet = document.getElementById('droplet-' + id); var pulse = document.getElementById('pulse-' + id); var icon = droplet.querySelector('.icon-wrapper'); if (droplet) { droplet.setAttribute('data-original-color', colorHex); if (!droplet.classList.contains('off')) { if(icon) icon.style.color = colorHex; droplet.style.boxShadow = '0 4px 15px ' + colorHex + '80'; if(pulse) pulse.style.borderColor = colorHex; } } }
-        function setHotspotIcon(id, iconName) { var droplet = document.getElementById('droplet-' + id); if (droplet) { var iconSpan = droplet.querySelector('.material-icons'); if (iconSpan) iconSpan.textContent = iconName; } }
+        
+        // --- XỬ LÝ SỰ KIỆN CLICK VÀO MODEL ---
+        modelViewer.addEventListener('click', (event) => { 
+            let hit = modelViewer.positionAndNormalFromPoint(event.clientX, event.clientY); 
+            if (hit != null) { 
+                var data = { type: 'model', position: hit.position.toString(), normal: hit.normal.toString() }; 
+                SmartLib.postMessage(JSON.stringify(data)); 
+            } 
+        }, true);
 
-        // --- HÀM ẨN HIỆN XE (ĐÃ FIX LỖI MÀU TRẮNG) ---
+        // --- XỬ LÝ CLICK VÀO HOTSPOT ---
+        function handleClick(event, id, element) { 
+            event.stopPropagation(); 
+            var rect = element.getBoundingClientRect(); 
+            var targetX = rect.left + (rect.width / 2); 
+            var targetY = rect.top + (rect.height / 2); 
+            var data = { type: 'hotspot', id: id, x: targetX, y: targetY }; 
+            SmartLib.postMessage(JSON.stringify(data)); 
+        }
+
+        // --- HÀM: ĐỔI TRẠNG THÁI HOTSPOT (ON/OFF) ---
+        function setHotspotState(id, isOn) { 
+            var droplet = document.getElementById('droplet-' + id); 
+            var pulse = document.getElementById('pulse-' + id); 
+            var icon = droplet.querySelector('.icon-wrapper'); 
+            if (droplet) { 
+                if (isOn) { 
+                    droplet.classList.remove('off'); 
+                    if(pulse) pulse.classList.remove('off'); 
+                    var originalColor = droplet.getAttribute('data-original-color'); 
+                    if(icon) icon.style.color = originalColor; 
+                    droplet.style.boxShadow = '0 4px 15px ' + originalColor + '80'; 
+                } else { 
+                    droplet.classList.add('off'); 
+                    if(pulse) pulse.classList.add('off'); 
+                    if(icon) icon.style.color = ''; 
+                    droplet.style.boxShadow = ''; 
+                } 
+            } 
+        }
+
+        // --- HÀM: ĐỔI MÀU HOTSPOT ---
+        function setHotspotColor(id, colorHex) { 
+            var droplet = document.getElementById('droplet-' + id); 
+            var pulse = document.getElementById('pulse-' + id); 
+            var icon = droplet.querySelector('.icon-wrapper'); 
+            if (droplet) { 
+                droplet.setAttribute('data-original-color', colorHex); 
+                if (!droplet.classList.contains('off')) { 
+                    if(icon) icon.style.color = colorHex; 
+                    droplet.style.boxShadow = '0 4px 15px ' + colorHex + '80'; 
+                    if(pulse) pulse.style.borderColor = colorHex; 
+                } 
+            } 
+        }
+
+        // --- HÀM: ĐỔI ICON (VÍ DỤ CỬA MỞ/ĐÓNG) ---
+        function setHotspotIcon(id, iconName) { 
+            var droplet = document.getElementById('droplet-' + id); 
+            if (droplet) { 
+                var iconSpan = droplet.querySelector('.material-icons'); 
+                if (iconSpan) iconSpan.textContent = iconName; 
+            } 
+        }
+
+        // --- HÀM CAO CẤP: ẨN/HIỆN VẬT THỂ 3D (GIỮ NGUYÊN MÀU) ---
         function setObjectVisibility(materialName, isVisible) {
            const model = modelViewer.model;
            if (!model) return;
-
            const foundMaterial = model.materials.find(m => m.name === materialName);
            
            if (foundMaterial) {
-              // FIX LỖI 1: Lấy màu gốc hiện tại của xe (để không bị đổi thành màu trắng)
               const currentColor = foundMaterial.pbrMetallicRoughness.baseColorFactor;
-              
-              // Chỉ đổi thông số thứ 4 (Alpha)
+              // Chỉ chỉnh sửa kênh Alpha (trong suốt), giữ nguyên RGB
               currentColor[3] = isVisible ? 1.0 : 0.0;
               
-              // Set lại màu đã chỉnh sửa alpha
               foundMaterial.pbrMetallicRoughness.setBaseColorFactor(currentColor);
               foundMaterial.setAlphaMode(isVisible ? 'OPAQUE' : 'BLEND');
            }
         }
 
-        // FIX LỖI 2: Mặc định khi vừa tải xong file 3D -> ẨN XE NGAY LẬP TỨC
+        // --- HÀM CAO CẤP: ĐỔI MÀU VẬT THỂ 3D (GIỮ NGUYÊN ĐỘ ẨN/HIỆN) ---
+        function setObjectColor(materialName, hexColor) {
+            const model = modelViewer.model;
+            if (!model) return;
+            const foundMaterial = model.materials.find(m => m.name === materialName);
+            
+            if (foundMaterial) {
+                // Parse màu HEX sang RGB (0.0 - 1.0)
+                const r = parseInt(hexColor.substr(1, 2), 16) / 255;
+                const g = parseInt(hexColor.substr(3, 2), 16) / 255;
+                const b = parseInt(hexColor.substr(5, 2), 16) / 255;
+
+                // Lấy độ trong suốt (Alpha) hiện tại để không làm hiện xe nếu đang ẩn
+                const currentAlpha = foundMaterial.pbrMetallicRoughness.baseColorFactor[3];
+
+                // Cập nhật màu mới + Alpha cũ
+                foundMaterial.pbrMetallicRoughness.setBaseColorFactor([r, g, b, currentAlpha]);
+            }
+        }
+
+        // --- MẶC ĐỊNH KHI LOAD XONG: ẨN XE ---
         modelViewer.addEventListener('load', () => {
-             // Ẩn xe mặc định khi vừa mở app
              setObjectVisibility('Car_Main', false);
         });
       </script>
@@ -211,4 +330,27 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
   }
 }
 
-class _ArrowPainter extends CustomPainter { final Color color; final bool isPointingUp; _ArrowPainter({required this.color, required this.isPointingUp}); @override void paint(Canvas canvas, Size size) { final paint = Paint()..color = color..style = PaintingStyle.fill; final path = Path(); if (isPointingUp) { path.moveTo(0, size.height); path.lineTo(size.width / 2, 0); path.lineTo(size.width, size.height); } else { path.moveTo(0, 0); path.lineTo(size.width / 2, size.height); path.lineTo(size.width, 0); } path.close(); canvas.drawPath(path, paint); } @override bool shouldRepaint(covariant CustomPainter oldDelegate) => false; }
+// Painter vẽ mũi tên chỉ vào Hotspot
+class _ArrowPainter extends CustomPainter { 
+  final Color color; 
+  final bool isPointingUp; 
+  _ArrowPainter({required this.color, required this.isPointingUp}); 
+  @override 
+  void paint(Canvas canvas, Size size) { 
+    final paint = Paint()..color = color..style = PaintingStyle.fill; 
+    final path = Path(); 
+    if (isPointingUp) { 
+      path.moveTo(0, size.height); 
+      path.lineTo(size.width / 2, 0); 
+      path.lineTo(size.width, size.height); 
+    } else { 
+      path.moveTo(0, 0); 
+      path.lineTo(size.width / 2, size.height); 
+      path.lineTo(size.width, 0); 
+    } 
+    path.close(); 
+    canvas.drawPath(path, paint); 
+  } 
+  @override 
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false; 
+}
