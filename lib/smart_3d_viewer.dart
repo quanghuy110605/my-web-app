@@ -4,15 +4,13 @@ import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'device_data.dart';
 
-// --- KHO TÊN ICON GOOGLE (MATERIAL ICONS) ---
+// --- KHO TÊN ICON ---
 class SmartIcons {
   static const String bulb = 'lightbulb';
   static const String fan = 'cyclone'; 
   static const String heater = 'thermostat'; 
   static const String curtain = 'view_headline';
   static const String ac = 'ac_unit';
-  
-  // Icon cho Cửa và Gara
   static const String doorOpen = 'meeting_room';   
   static const String doorClosed = 'door_front';   
   static const String car = 'directions_car';      
@@ -63,44 +61,23 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
   bool isPanelVisible = false;
   WebViewController? _webController;
 
-  // --- HÀM LẮNG NGHE THAY ĐỔI TỪ THIẾT BỊ ---
   void _onDeviceChanged() {
     if (_webController == null) return;
-    
-    // Biến cờ để kiểm tra xem trong nhà có Gara không
     bool hasGara = false;
-
     for (var hotspot in widget.hotspots) {
       final device = deviceManager.getDevice(hotspot.id);
-      
-      // 1. Cập nhật trạng thái Hotspot (Sáng/Tắt)
       _webController!.runJavaScript("setHotspotState('${hotspot.id}', ${device.isOn})");
-      
-      // 2. Cập nhật màu Hotspot
       String hex = '#${device.color.value.toRadixString(16).substring(2)}';
       _webController!.runJavaScript("setHotspotColor('${hotspot.id}', '$hex')");
-      
-      // 3. Cập nhật Icon (Mở/Đóng)
       _webController!.runJavaScript("setHotspotIcon('${hotspot.id}', '${hotspot.iconName}')");
-
-      // --- 4. XỬ LÝ RIÊNG CHO GARA (XE "Car_Main") ---
+      
       if (hotspot.iconName == SmartIcons.car || hotspot.iconName == SmartIcons.garageEmpty) {
           hasGara = true; 
-          
-          // A. Ẩn/Hiện xe (isOn = true -> Hiện, isOn = false -> Ẩn)
-          _webController!.runJavaScript("setObjectVisibility('Car_Main', ${device.isOn})");
-          
-          // B. Đổi màu xe (Chỉ đổi khi xe đang hiện)
-          if (device.isOn) {
-             _webController!.runJavaScript("setObjectColor('Car_Main', '$hex')");
-          }
+          _webController!.runJavaScript("forceSetObjectVisibility('Car_Main', ${device.isOn})");
+          if (device.isOn) _webController!.runJavaScript("setObjectColor('Car_Main', '$hex')");
       }
     }
-
-    // Nếu không tìm thấy Gara nào trong danh sách thiết bị -> Ẩn xe đi
-    if (!hasGara) {
-       _webController!.runJavaScript("setObjectVisibility('Car_Main', false)");
-    }
+    if (!hasGara) _webController!.runJavaScript("forceSetObjectVisibility('Car_Main', false)");
   }
 
   @override
@@ -127,21 +104,14 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
             alt: "Smart Home",
             backgroundColor: Colors.black,
             autoRotate: false,
-            
-            // Cấu hình Camera
             cameraControls: true, 
             disableZoom: false,
             disablePan: false,
-            
-            // Khi Webview load xong -> Đợi 1s rồi cập nhật trạng thái
             onWebViewCreated: (c) { 
               _webController = c; 
               Future.delayed(const Duration(seconds: 1), _onDeviceChanged); 
             },
-            
             innerModelViewerHtml: _generateHtml(),
-            
-            // Kênh giao tiếp JS -> Flutter
             javascriptChannels: { 
               JavascriptChannel('SmartLib', onMessageReceived: (message) { 
                 try { 
@@ -153,6 +123,7 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
                       isPanelVisible = true; 
                     }); 
                   } else if (data['type'] == 'model') { 
+                    debugPrint("FLUTTER NHẬN ĐƯỢC CLICK: ${data['position']}");
                     if (widget.onModelTap != null) { 
                       widget.onModelTap!(data['position'], data['normal']); 
                     } 
@@ -181,31 +152,15 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
       final device = deviceManager.getDevice(h.id);
       String hexColor = '#${device.color.value.toRadixString(16).substring(2)}';
       String initialClass = device.isOn ? "droplet" : "droplet off";
-      
-      buttonsHtml += """
-        <button slot="hotspot-${h.id}" 
-                data-position="${h.position}" data-normal="${h.normal}"
-                style="background: transparent; border: none; padding: 0; width: 0; height: 0; position: relative;"
-                onclick="handleClick(event, '${h.id}', this)">
-            <div class="droplet-container">
-                <div id="droplet-${h.id}" class="$initialClass" 
-                     data-original-color="$hexColor"
-                     style="background-color: rgba(255,255,255,0.95); box-shadow: 0 4px 15px ${hexColor}80;">
-                    <span class="material-icons icon-wrapper" style="color: $hexColor; font-size: 20px;">
-                        ${h.iconName}
-                    </span>
-                </div>
-                <div id="pulse-${h.id}" class="pulse-ring" style="border-color: $hexColor"></div>
-            </div>
-        </button>
-      """;
+      buttonsHtml += """<button slot="hotspot-${h.id}" data-position="${h.position}" data-normal="${h.normal}" style="background: transparent; border: none; padding: 0; width: 0; height: 0; position: relative;" onclick="handleClick(event, '${h.id}', this)"><div class="droplet-container"><div id="droplet-${h.id}" class="$initialClass" data-original-color="$hexColor" style="background-color: rgba(255,255,255,0.95); box-shadow: 0 4px 15px ${hexColor}80;"><span class="material-icons icon-wrapper" style="color: $hexColor; font-size: 20px;">${h.iconName}</span></div><div id="pulse-${h.id}" class="pulse-ring" style="border-color: $hexColor"></div></div></button>""";
     }
 
     return """
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
       <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
       <style>
-        .droplet-container { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%) translateY(5px); width: 40px; height: 50px; display: flex; justify-content: center; cursor: pointer; }
+        model-viewer { cursor: crosshair; }
+        .droplet-container { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%) translateY(5px); width: 40px; height: 50px; display: flex; justify-content: center; cursor: pointer; pointer-events: auto; }
         .droplet-container:active { transform: translateX(-50%) translateY(5px) scale(0.9); }
         .droplet { width: 36px; height: 36px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); display: flex; align-items: center; justify-content: center; border: 2px solid white; transition: background-color 0.3s, box-shadow 0.3s; }
         .icon-wrapper { transform: rotate(45deg); transition: color 0.3s; line-height: 1; display: block; }
@@ -215,142 +170,79 @@ class _SmartHomeViewerState extends State<SmartHomeViewer> {
         .pulse-ring.off { display: none; }
         @keyframes pulse { 0% { transform: translateX(-50%) scale(0.5); opacity: 1; } 100% { transform: translateX(-50%) scale(2.5); opacity: 0; } }
       </style>
-      
       $buttonsHtml
-      
       <script>
         const modelViewer = document.querySelector('model-viewer');
         
-        // --- XỬ LÝ SỰ KIỆN CLICK VÀO MODEL ---
-        modelViewer.addEventListener('click', (event) => { 
-            let hit = modelViewer.positionAndNormalFromPoint(event.clientX, event.clientY); 
-            if (hit != null) { 
-                var data = { type: 'model', position: hit.position.toString(), normal: hit.normal.toString() }; 
-                SmartLib.postMessage(JSON.stringify(data)); 
-            } 
+        // --- LOGIC CLICK CHUỘT CHO WEB (FIXED) ---
+        let startX = 0, startY = 0, startTime = 0;
+
+        // 1. Nhấn chuột xuống
+        modelViewer.addEventListener('mousedown', (event) => {
+            startX = event.clientX;
+            startY = event.clientY;
+            startTime = Date.now();
         }, true);
 
-        // --- XỬ LÝ CLICK VÀO HOTSPOT ---
-        function handleClick(event, id, element) { 
-            event.stopPropagation(); 
-            var rect = element.getBoundingClientRect(); 
-            var targetX = rect.left + (rect.width / 2); 
-            var targetY = rect.top + (rect.height / 2); 
-            var data = { type: 'hotspot', id: id, x: targetX, y: targetY }; 
-            SmartLib.postMessage(JSON.stringify(data)); 
-        }
+        // 2. Nhả chuột ra (Thay vì click, dùng mouseup để tính toán)
+        modelViewer.addEventListener('mouseup', (event) => {
+            const diffX = Math.abs(event.clientX - startX);
+            const diffY = Math.abs(event.clientY - startY);
+            const timeDiff = Date.now() - startTime;
 
-        // --- HÀM: ĐỔI TRẠNG THÁI HOTSPOT (ON/OFF) ---
-        function setHotspotState(id, isOn) { 
-            var droplet = document.getElementById('droplet-' + id); 
-            var pulse = document.getElementById('pulse-' + id); 
-            var icon = droplet.querySelector('.icon-wrapper'); 
-            if (droplet) { 
-                if (isOn) { 
-                    droplet.classList.remove('off'); 
-                    if(pulse) pulse.classList.remove('off'); 
-                    var originalColor = droplet.getAttribute('data-original-color'); 
-                    if(icon) icon.style.color = originalColor; 
-                    droplet.style.boxShadow = '0 4px 15px ' + originalColor + '80'; 
-                } else { 
-                    droplet.classList.add('off'); 
-                    if(pulse) pulse.classList.add('off'); 
-                    if(icon) icon.style.color = ''; 
-                    droplet.style.boxShadow = ''; 
-                } 
-            } 
-        }
-
-        // --- HÀM: ĐỔI MÀU HOTSPOT ---
-        function setHotspotColor(id, colorHex) { 
-            var droplet = document.getElementById('droplet-' + id); 
-            var pulse = document.getElementById('pulse-' + id); 
-            var icon = droplet.querySelector('.icon-wrapper'); 
-            if (droplet) { 
-                droplet.setAttribute('data-original-color', colorHex); 
-                if (!droplet.classList.contains('off')) { 
-                    if(icon) icon.style.color = colorHex; 
-                    droplet.style.boxShadow = '0 4px 15px ' + colorHex + '80'; 
-                    if(pulse) pulse.style.borderColor = colorHex; 
-                } 
-            } 
-        }
-
-        // --- HÀM: ĐỔI ICON (VÍ DỤ CỬA MỞ/ĐÓNG) ---
-        function setHotspotIcon(id, iconName) { 
-            var droplet = document.getElementById('droplet-' + id); 
-            if (droplet) { 
-                var iconSpan = droplet.querySelector('.material-icons'); 
-                if (iconSpan) iconSpan.textContent = iconName; 
-            } 
-        }
-
-        // --- HÀM CAO CẤP: ẨN/HIỆN VẬT THỂ 3D (GIỮ NGUYÊN MÀU) ---
-        function setObjectVisibility(materialName, isVisible) {
-           const model = modelViewer.model;
-           if (!model) return;
-           const foundMaterial = model.materials.find(m => m.name === materialName);
-           
-           if (foundMaterial) {
-              const currentColor = foundMaterial.pbrMetallicRoughness.baseColorFactor;
-              // Chỉ chỉnh sửa kênh Alpha (trong suốt), giữ nguyên RGB
-              currentColor[3] = isVisible ? 1.0 : 0.0;
-              
-              foundMaterial.pbrMetallicRoughness.setBaseColorFactor(currentColor);
-              foundMaterial.setAlphaMode(isVisible ? 'OPAQUE' : 'BLEND');
-           }
-        }
-
-        // --- HÀM CAO CẤP: ĐỔI MÀU VẬT THỂ 3D (GIỮ NGUYÊN ĐỘ ẨN/HIỆN) ---
-        function setObjectColor(materialName, hexColor) {
-            const model = modelViewer.model;
-            if (!model) return;
-            const foundMaterial = model.materials.find(m => m.name === materialName);
-            
-            if (foundMaterial) {
-                // Parse màu HEX sang RGB (0.0 - 1.0)
-                const r = parseInt(hexColor.substr(1, 2), 16) / 255;
-                const g = parseInt(hexColor.substr(3, 2), 16) / 255;
-                const b = parseInt(hexColor.substr(5, 2), 16) / 255;
-
-                // Lấy độ trong suốt (Alpha) hiện tại để không làm hiện xe nếu đang ẩn
-                const currentAlpha = foundMaterial.pbrMetallicRoughness.baseColorFactor[3];
-
-                // Cập nhật màu mới + Alpha cũ
-                foundMaterial.pbrMetallicRoughness.setBaseColorFactor([r, g, b, currentAlpha]);
+            // Nếu di chuyển ít (không phải kéo xoay) và thời gian ngắn -> Là CLICK
+            if (diffX < 5 && diffY < 5 && timeDiff < 500) {
+                
+                // Lấy tọa độ 3D
+                let hit = modelViewer.positionAndNormalFromPoint(event.clientX, event.clientY);
+                
+                if (hit != null) {
+                    console.log("CLICK TRÚNG MÔ HÌNH: " + hit.position.toString());
+                    var data = { 
+                       type: 'model', 
+                       position: hit.position.toString(), 
+                       normal: hit.normal.toString() 
+                    }; 
+                    // Gửi về Flutter an toàn
+                    try {
+                        SmartLib.postMessage(JSON.stringify(data));
+                    } catch (e) {
+                        console.log("Lỗi gửi SmartLib: " + e);
+                    }
+                } else {
+                    console.log("CLICK TRƯỢT (Vào khoảng không)");
+                }
             }
-        }
+        }, true);
 
-        // --- MẶC ĐỊNH KHI LOAD XONG: ẨN XE ---
-        modelViewer.addEventListener('load', () => {
-             setObjectVisibility('Car_Main', false);
-        });
+        // Giữ nguyên các hàm bổ trợ
+        function handleClick(event, id, element) { event.stopPropagation(); var rect = element.getBoundingClientRect(); var targetX = rect.left + (rect.width / 2); var targetY = rect.top + (rect.height / 2); var data = { type: 'hotspot', id: id, x: targetX, y: targetY }; try { SmartLib.postMessage(JSON.stringify(data)); } catch(e){} }
+        function setHotspotState(id, isOn) { var droplet = document.getElementById('droplet-' + id); var pulse = document.getElementById('pulse-' + id); var icon = droplet.querySelector('.icon-wrapper'); if (droplet) { if (isOn) { droplet.classList.remove('off'); if(pulse) pulse.classList.remove('off'); var originalColor = droplet.getAttribute('data-original-color'); if(icon) icon.style.color = originalColor; droplet.style.boxShadow = '0 4px 15px ' + originalColor + '80'; } else { droplet.classList.add('off'); if(pulse) pulse.classList.add('off'); if(icon) icon.style.color = ''; droplet.style.boxShadow = ''; } } }
+        function setHotspotColor(id, colorHex) { var droplet = document.getElementById('droplet-' + id); var pulse = document.getElementById('pulse-' + id); var icon = droplet.querySelector('.icon-wrapper'); if (droplet) { droplet.setAttribute('data-original-color', colorHex); if (!droplet.classList.contains('off')) { if(icon) icon.style.color = colorHex; droplet.style.boxShadow = '0 4px 15px ' + colorHex + '80'; if(pulse) pulse.style.borderColor = colorHex; } } }
+        function setHotspotIcon(id, iconName) { var droplet = document.getElementById('droplet-' + id); if (droplet) { var iconSpan = droplet.querySelector('.material-icons'); if (iconSpan) iconSpan.textContent = iconName; } }
+        function setObjectVisibility(materialName, isVisible) { const model = modelViewer.model; if (!model) return; const foundMaterial = model.materials.find(m => m.name === materialName); if (foundMaterial) { const currentColor = foundMaterial.pbrMetallicRoughness.baseColorFactor; currentColor[3] = isVisible ? 1.0 : 0.0; foundMaterial.pbrMetallicRoughness.setBaseColorFactor(currentColor); foundMaterial.setAlphaMode(isVisible ? 'OPAQUE' : 'BLEND'); } }
+        function setObjectColor(materialName, hexColor) { const model = modelViewer.model; if (!model) return; const foundMaterial = model.materials.find(m => m.name === materialName); if (foundMaterial) { const r = parseInt(hexColor.substr(1, 2), 16) / 255; const g = parseInt(hexColor.substr(3, 2), 16) / 255; const b = parseInt(hexColor.substr(5, 2), 16) / 255; const currentAlpha = foundMaterial.pbrMetallicRoughness.baseColorFactor[3]; foundMaterial.pbrMetallicRoughness.setBaseColorFactor([r, g, b, currentAlpha]); } }
+        
+        function forceSetObjectVisibility(materialName, isVisible) {
+             let attempts = 0;
+             const interval = setInterval(() => {
+                 attempts++;
+                 const model = modelViewer.model;
+                 if (model) {
+                     const foundMaterial = model.materials.find(m => m.name === materialName);
+                     if (foundMaterial) {
+                         setObjectVisibility(materialName, isVisible);
+                         if (attempts > 5) clearInterval(interval);
+                         return;
+                     }
+                 }
+                 if (attempts > 20) clearInterval(interval);
+             }, 200);
+        }
+        forceSetObjectVisibility('Car_Main', false);
+        modelViewer.addEventListener('load', () => { forceSetObjectVisibility('Car_Main', false); });
       </script>
     """;
   }
 }
-
-// Painter vẽ mũi tên chỉ vào Hotspot
-class _ArrowPainter extends CustomPainter { 
-  final Color color; 
-  final bool isPointingUp; 
-  _ArrowPainter({required this.color, required this.isPointingUp}); 
-  @override 
-  void paint(Canvas canvas, Size size) { 
-    final paint = Paint()..color = color..style = PaintingStyle.fill; 
-    final path = Path(); 
-    if (isPointingUp) { 
-      path.moveTo(0, size.height); 
-      path.lineTo(size.width / 2, 0); 
-      path.lineTo(size.width, size.height); 
-    } else { 
-      path.moveTo(0, 0); 
-      path.lineTo(size.width / 2, size.height); 
-      path.lineTo(size.width, 0); 
-    } 
-    path.close(); 
-    canvas.drawPath(path, paint); 
-  } 
-  @override 
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false; 
-}
+class _ArrowPainter extends CustomPainter { final Color color; final bool isPointingUp; _ArrowPainter({required this.color, required this.isPointingUp}); @override void paint(Canvas canvas, Size size) { final paint = Paint()..color = color..style = PaintingStyle.fill; final path = Path(); if (isPointingUp) { path.moveTo(0, size.height); path.lineTo(size.width / 2, 0); path.lineTo(size.width, size.height); } else { path.moveTo(0, 0); path.lineTo(size.width / 2, size.height); path.lineTo(size.width, 0); } path.close(); canvas.drawPath(path, paint); } @override bool shouldRepaint(covariant CustomPainter oldDelegate) => false; }
