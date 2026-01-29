@@ -6,8 +6,10 @@ class SmartDevice {
   final IconData icon;
   bool isOn;
   Color color;
+  double brightness;
   String position;
   String normal;
+  final String room; // Biến lưu tên phòng
 
   SmartDevice({
     required this.id,
@@ -15,8 +17,10 @@ class SmartDevice {
     required this.icon,
     this.isOn = false,
     this.color = Colors.amber,
+    this.brightness = 100.0,
     this.position = '0m 0m 0m',
     this.normal = '0m 1m 0m',
+    this.room = 'Chưa rõ', // Mặc định
   });
 }
 
@@ -25,31 +29,20 @@ class DeviceManager extends ChangeNotifier {
   factory DeviceManager() => _instance;
   DeviceManager._internal();
 
-  // FIX: Để danh sách rỗng ban đầu (Xóa bóng đèn mẫu)
   final List<SmartDevice> devices = [];
 
-  // FIX: Sửa hàm getDevice để không bị lỗi khi danh sách rỗng
   SmartDevice getDevice(String id) {
-    if (devices.isEmpty) {
-      // Trả về thiết bị ảo để tránh crash app nếu lỡ gọi
-      return SmartDevice(id: 'dummy', name: 'None', icon: Icons.error);
-    }
+    if (devices.isEmpty) return SmartDevice(id: 'dummy', name: 'None', icon: Icons.error);
     return devices.firstWhere((d) => d.id == id, orElse: () => devices[0]);
   }
 
-  void toggleDevice(String id, bool value) {
-    if (devices.isEmpty) return;
-    getDevice(id).isOn = value;
-    notifyListeners();
-  }
+  // ... (Các hàm toggleDevice, changeColor, changeBrightness giữ nguyên) ...
+  void toggleDevice(String id, bool value) { if(devices.isEmpty) return; getDevice(id).isOn = value; notifyListeners(); }
+  void changeColor(String id, Color newColor) { if(devices.isEmpty) return; getDevice(id).color = newColor; notifyListeners(); }
+  void changeBrightness(String id, double value) { if(devices.isEmpty) return; getDevice(id).brightness = value; notifyListeners(); }
 
-  void changeColor(String id, Color newColor) {
-    if (devices.isEmpty) return;
-    getDevice(id).color = newColor;
-    notifyListeners();
-  }
-
-  void addDevice(String name, IconData icon, String position, String normal) {
+  // SỬA HÀM NÀY: Thêm tham số `room`
+  void addDevice(String name, IconData icon, String position, String normal, String room) {
     final newId = 'device_${DateTime.now().millisecondsSinceEpoch}';
     final newDevice = SmartDevice(
       id: newId,
@@ -59,6 +52,7 @@ class DeviceManager extends ChangeNotifier {
       color: Colors.blueAccent,
       position: position,
       normal: normal,
+      room: room, // Lưu tên phòng vào đây
     );
     devices.add(newDevice);
     notifyListeners();
