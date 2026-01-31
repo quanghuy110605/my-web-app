@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../models/device_model.dart'; 
+import '../models/device_model.dart';
+import '../services/mqtt_service.dart';
 
 class DeviceListScreen extends StatelessWidget {
   const DeviceListScreen({super.key});
@@ -7,87 +9,117 @@ class DeviceListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(title: const Text("Danh sách thiết bị"), backgroundColor: Colors.black, elevation: 0),
-      
+      backgroundColor: Colors.black, // Nền đen đồng bộ
+      appBar: AppBar(
+        title: const Text("Quản lý thiết bị", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        automaticallyImplyLeading: false, // Ẩn nút back mặc định
+      ),
       body: ListenableBuilder(
-        listenable: deviceManager, 
+        listenable: deviceManager,
         builder: (context, _) {
-          final devices = deviceManager.devices;
+          // --- BỘ LỌC QUAN TRỌNG ---
+          // Chỉ lấy các thiết bị KHÔNG phải là Gara
+          final devices = deviceManager.devices
+              .where((d) => !d.name.contains("Gara")) // <--- LỌC BỎ XE Ô TÔ
+              .toList();
+
           if (devices.isEmpty) {
-            return const Center(child: Text("Chưa có thiết bị nào", style: TextStyle(color: Colors.white54)));
-          }
-
-          // 1. GOM NHÓM THIẾT BỊ THEO PHÒNG
-          Map<String, List<SmartDevice>> groupedDevices = {};
-          for (var d in devices) {
-             if (!groupedDevices.containsKey(d.room)) {
-               groupedDevices[d.room] = [];
-             }
-             groupedDevices[d.room]!.add(d);
-          }
-
-          // 2. HIỂN THỊ DANH SÁCH THEO NHÓM
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: groupedDevices.length,
-            itemBuilder: (context, index) {
-              String roomName = groupedDevices.keys.elementAt(index);
-              List<SmartDevice> roomDevices = groupedDevices[roomName]!;
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Tiêu đề phòng
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 5),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.meeting_room, color: Colors.amber, size: 20),
-                        const SizedBox(width: 8),
-                        Text(roomName, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                        const Spacer(),
-                        Text("${roomDevices.length} thiết bị", style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-
-                  // Danh sách thiết bị trong phòng đó
-                  ...roomDevices.map((device) {
-                    return Card(
-                      color: Colors.grey[900], 
-                      margin: const EdgeInsets.only(bottom: 12), 
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        leading: Container(
-                          padding: const EdgeInsets.all(10), 
-                          decoration: BoxDecoration(color: device.isOn ? device.color.withOpacity(0.2) : Colors.white10, shape: BoxShape.circle), 
-                          child: Icon(device.icon, color: device.isOn ? device.color : Colors.grey)
-                        ),
-                        title: Text(device.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        // Hiển thị thêm thông tin PIN
-                        subtitle: Text(
-                          "Pin: D${device.pin != -1 ? device.pin : 'N/A'} • ${device.isOn ? "Đang bật" : "Đang tắt"}", 
-                          style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)
-                        ),
-                        trailing: Switch(
-                          value: device.isOn, 
-                          activeColor: Colors.white, 
-                          activeTrackColor: device.color, 
-                          inactiveTrackColor: Colors.grey[800], 
-                          onChanged: (val) { deviceManager.toggleDevice(device.id, val); }
-                        ),
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 10), // Khoảng cách giữa các phòng
-                  Divider(color: Colors.grey[800]), // Đường kẻ ngăn cách
+                  Icon(Icons.devices_other, size: 60, color: Colors.grey[800]),
+                  const SizedBox(height: 10),
+                  const Text("Chưa có thiết bị nào", style: TextStyle(color: Colors.grey)),
                 ],
-              );
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            itemCount: devices.length,
+            itemBuilder: (context, index) {
+              final device = devices[index];
+              return _buildDeviceItem(device);
             },
           );
-        }
+        },
+      ),
+    );
+  }
+
+  Widget _buildDeviceItem(SmartDevice device) {
+    // Xác định màu sắc dựa trên trạng thái
+    final isActive = device.isOn;
+    final activeColor = device.color;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey[900],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isActive ? activeColor.withOpacity(0.5) : Colors.transparent,
+          width: 1
+        ),
+        boxShadow: isActive ? [
+          BoxShadow(color: activeColor.withOpacity(0.1), blurRadius: 8, spreadRadius: 1)
+        ] : [],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: isActive ? activeColor.withOpacity(0.2) : Colors.grey[800],
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            device.icon,
+            color: isActive ? activeColor : Colors.grey,
+            size: 24,
+          ),
+        ),
+        title: Text(
+          device.name,
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+            decoration: isActive ? null : TextDecoration.none
+          ),
+        ),
+        subtitle: Text(
+          "${device.room} • Pin D${device.pin}",
+          style: TextStyle(color: Colors.grey[500], fontSize: 12),
+        ),
+        trailing: Transform.scale(
+          scale: 0.8,
+          child: Switch(
+            value: isActive,
+            activeColor: activeColor,
+            activeTrackColor: activeColor.withOpacity(0.3),
+            inactiveThumbColor: Colors.grey,
+            inactiveTrackColor: Colors.grey[800],
+            onChanged: (val) {
+              // 1. Cập nhật UI
+              deviceManager.toggleDevice(device.id, val);
+              
+              // 2. Gửi lệnh MQTT điều khiển thật
+              // Format JSON: {"action":"control", "pin": 2, "state": 1}
+              Map<String, dynamic> cmd = {
+                "action": "control",
+                "pin": device.pin,
+                "state": val ? 1 : 0
+              };
+              mqttHandler.publishMessage("home/control", jsonEncode(cmd));
+            },
+          ),
+        ),
       ),
     );
   }

@@ -16,6 +16,14 @@ import '../models/notification_model.dart';
 import '../models/people_manager.dart'; 
 import 'notification_screen.dart';
 
+// --- MODEL ĐỂ LƯU HÌNH DÁNG PHÒNG ---
+class RoomShape {
+  final String name;
+  final List<Offset> points; // Danh sách tọa độ X, Z
+  RoomShape(this.name, this.points);
+}
+// -------------------------------------
+
 class DeviceType {
   final String name;
   final IconData icon;
@@ -43,8 +51,13 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
   @override
   bool get wantKeepAlive => true;
 
+  // --- BIẾN CHO CHẾ ĐỘ MAP EDITOR ---
   bool isMapMode = false; 
   List<String> tempMapPoints = []; 
+  
+  // DANH SÁCH CÁC PHÒNG ĐÃ LƯU (Dùng để nhận diện vị trí)
+  List<RoomShape> savedRooms = []; 
+  // ----------------------------------
 
   final List<DeviceType> availableTypes = [
     DeviceType("Đèn", Icons.lightbulb, Colors.amber),
@@ -55,10 +68,12 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
     DeviceType("Điều hòa", Icons.ac_unit, Colors.cyan),
   ];
 
-  final List<String> rooms = ["Phòng Khách", "Phòng Ngủ", "Nhà Bếp", "Sân Vườn", "WC"];
+  // Danh sách tên phòng mặc định (dùng khi chưa vẽ map hoặc chọn thủ công)
+  final List<String> defaultRooms = ["Phòng Khách", "Phòng Ngủ", "Nhà Bếp", "Sân Vườn", "WC"];
   String selectedRoom = "Phòng Khách";
   TextEditingController pinController = TextEditingController(text: "2");
 
+  // Tọa độ AI (Tạm thời)
   final Map<String, String> roomCoordinates = {
     "Phòng Khách": "0.54m 1.5m -1.2m", 
     "Phòng Ngủ": "-2.1m 1.5m 3.5m",
@@ -66,18 +81,60 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
     "Sân Vườn": "4.0m 1.0m 4.0m",
   };
 
+  // --- THUẬT TOÁN: KIỂM TRA ĐIỂM CÓ NẰM TRONG ĐA GIÁC KHÔNG ---
+  bool _isPointInPolygon(Offset point, List<Offset> polygon) {
+    int i, j = polygon.length - 1;
+    bool oddNodes = false;
+    for (i = 0; i < polygon.length; i++) {
+      if ((polygon[i].dy < point.dy && polygon[j].dy >= point.dy ||
+          polygon[j].dy < point.dy && polygon[i].dy >= point.dy) &&
+          (polygon[i].dx <= point.dx || polygon[j].dx <= point.dx)) {
+            if (polygon[i].dx + (point.dy - polygon[i].dy) / (polygon[j].dy - polygon[i].dy) * (polygon[j].dx - polygon[i].dx) < point.dx) {
+              oddNodes = !oddNodes;
+            }
+      }
+      j = i;
+    }
+    return oddNodes;
+  }
+  // -------------------------------------------------------------
+
   void _handleModelTap(String position, String normal) {
-    // 1. LOGIC VẼ MAP (Ưu tiên)
+    // 1. LOGIC VẼ MAP
     if (isMapMode) {
-      setState(() {
-        tempMapPoints.add(position);
-      });
-      print("📍 Đã thêm điểm: $position");
+      setState(() { tempMapPoints.add(position); });
       return;
     }
 
-    // 2. LOGIC THÊM THIẾT BỊ
+    // 2. LOGIC THÊM THIẾT BỊ (ĐÃ NÂNG CẤP AUTO DETECT ROOM)
     if (!widget.isAddingMode) return;
+    
+    // -- XỬ LÝ TỰ ĐỘNG NHẬN DIỆN PHÒNG --
+    bool isAutoDetected = false;
+    
+    // Parse tọa độ điểm chạm: "0.5m 0m -1.2m" -> x=0.5, z=-1.2
+    try {
+      final parts = position.replaceAll('m', '').split(' ');
+      double tapX = double.parse(parts[0]);
+      double tapZ = double.parse(parts[2]); // Lấy Z (bỏ qua độ cao Y)
+      Offset tapPoint = Offset(tapX, tapZ);
+
+      // Duyệt qua tất cả các phòng đã vẽ
+      for (var room in savedRooms) {
+        if (_isPointInPolygon(tapPoint, room.points)) {
+          selectedRoom = room.name; // Tự động chọn phòng này
+          isAutoDetected = true;
+          print("🔍 Đã phát hiện vị trí thuộc về: ${room.name}");
+          break;
+        }
+      }
+    } catch (e) { print("Lỗi parse tọa độ: $e"); }
+
+    // Nếu không nhận diện được (chạm ra ngoài map), mặc định về Phòng Khách
+    if (!isAutoDetected && !defaultRooms.contains(selectedRoom)) {
+      selectedRoom = defaultRooms[0];
+    }
+    // ------------------------------------
     
     bool isRoomListOpen = false;
 
@@ -97,7 +154,8 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeOut,
-                    height: isRoomListOpen ? 650 : 520, 
+                    // Nếu tự nhận diện phòng -> Bảng ngắn hơn vì không cần dropdown
+                    height: isAutoDetected ? 450 : (isRoomListOpen ? 650 : 520), 
                     padding: const EdgeInsets.fromLTRB(25, 15, 25, 25),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.85), 
@@ -121,36 +179,64 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // --- CỘT CHỌN PHÒNG (THÔNG MINH) ---
                             Expanded(
                               flex: 2,
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 const Text("Vị trí", style: TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w600)),
                                 const SizedBox(height: 8),
-                                GestureDetector(
-                                  onTap: () { setModalState(() { isRoomListOpen = !isRoomListOpen; }); },
-                                  child: Container(
-                                    height: 55, padding: const EdgeInsets.symmetric(horizontal: 15),
-                                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.6), borderRadius: BorderRadius.circular(16), border: Border.all(color: isRoomListOpen ? Colors.blueAccent : Colors.white, width: 2)),
-                                    child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                                      Row(children: [const Icon(Icons.meeting_room, color: Colors.blueAccent, size: 20), const SizedBox(width: 10), Text(selectedRoom, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold))]),
-                                      Icon(isRoomListOpen ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.black54),
-                                    ]),
-                                  ),
-                                ),
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 300),
-                                  height: isRoomListOpen ? (rooms.length * 50.0 + 10) : 0,
-                                  margin: const EdgeInsets.only(top: 8),
-                                  curve: Curves.easeInOut,
-                                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))]),
-                                  child: ClipRRect(borderRadius: BorderRadius.circular(16), child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: SizedBox(height: rooms.length * 50.0, child: Stack(children: [
-                                    AnimatedPositioned(duration: const Duration(milliseconds: 250), curve: Curves.easeOutBack, top: rooms.indexOf(selectedRoom) * 50.0 + 5, left: 5, right: 5, height: 40, child: Container(decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.15), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.blueAccent.withOpacity(0.5))))),
-                                    Column(children: rooms.map((room) { return GestureDetector(onTap: () { setModalState(() { selectedRoom = room; Future.delayed(const Duration(milliseconds: 300), () { if (context.mounted) setModalState(() => isRoomListOpen = false); }); }); }, child: Container(height: 50, color: Colors.transparent, padding: const EdgeInsets.symmetric(horizontal: 15), child: Row(children: [Icon(Icons.circle, size: 8, color: selectedRoom == room ? Colors.blueAccent : Colors.grey[300]), const SizedBox(width: 12), Text(room, style: TextStyle(color: selectedRoom == room ? Colors.blueAccent : Colors.black87, fontWeight: selectedRoom == room ? FontWeight.bold : FontWeight.w500))]))); }).toList())
-                                  ]))))
-                                )
+                                
+                                // NẾU TỰ ĐỘNG NHẬN DIỆN -> HIỆN TEXT TĨNH (KHÔNG CẦN CHỌN)
+                                if (isAutoDetected)
+                                  Container(
+                                    height: 55, 
+                                    padding: const EdgeInsets.symmetric(horizontal: 15),
+                                    decoration: BoxDecoration(
+                                      color: Colors.greenAccent.withOpacity(0.2), // Màu xanh báo hiệu auto
+                                      borderRadius: BorderRadius.circular(16), 
+                                      border: Border.all(color: Colors.greenAccent, width: 1)
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.gps_fixed, color: Colors.green, size: 20), 
+                                        const SizedBox(width: 10), 
+                                        Expanded(child: Text(selectedRoom, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16))),
+                                        const Icon(Icons.check_circle, color: Colors.green, size: 18)
+                                      ]
+                                    ),
+                                  )
+                                // NẾU KHÔNG NHẬN DIỆN ĐƯỢC -> HIỆN DROPDOWN CŨ
+                                else 
+                                  Column(
+                                    children: [
+                                      GestureDetector(
+                                        onTap: () { setModalState(() { isRoomListOpen = !isRoomListOpen; }); },
+                                        child: Container(
+                                          height: 55, padding: const EdgeInsets.symmetric(horizontal: 15),
+                                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.6), borderRadius: BorderRadius.circular(16), border: Border.all(color: isRoomListOpen ? Colors.blueAccent : Colors.white, width: 2)),
+                                          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                                            Row(children: [const Icon(Icons.meeting_room, color: Colors.blueAccent, size: 20), const SizedBox(width: 10), Text(selectedRoom, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold))]),
+                                            Icon(isRoomListOpen ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.black54),
+                                          ]),
+                                        ),
+                                      ),
+                                      AnimatedContainer(
+                                        duration: const Duration(milliseconds: 300),
+                                        height: isRoomListOpen ? (defaultRooms.length * 50.0 + 10) : 0,
+                                        margin: const EdgeInsets.only(top: 8),
+                                        curve: Curves.easeInOut,
+                                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))]),
+                                        child: ClipRRect(borderRadius: BorderRadius.circular(16), child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: SizedBox(height: defaultRooms.length * 50.0, child: Stack(children: [
+                                          AnimatedPositioned(duration: const Duration(milliseconds: 250), curve: Curves.easeOutBack, top: defaultRooms.indexOf(selectedRoom) * 50.0 + 5, left: 5, right: 5, height: 40, child: Container(decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.15), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.blueAccent.withOpacity(0.5))))),
+                                          Column(children: defaultRooms.map((room) { return GestureDetector(onTap: () { setModalState(() { selectedRoom = room; Future.delayed(const Duration(milliseconds: 300), () { if (context.mounted) setModalState(() => isRoomListOpen = false); }); }); }, child: Container(height: 50, color: Colors.transparent, padding: const EdgeInsets.symmetric(horizontal: 15), child: Row(children: [Icon(Icons.circle, size: 8, color: selectedRoom == room ? Colors.blueAccent : Colors.grey[300]), const SizedBox(width: 12), Text(room, style: TextStyle(color: selectedRoom == room ? Colors.blueAccent : Colors.black87, fontWeight: selectedRoom == room ? FontWeight.bold : FontWeight.w500))]))); }).toList())
+                                        ]))))
+                                      )
+                                    ],
+                                  )
                               ]),
                             ),
                             const SizedBox(width: 15),
+                            // --- CỘT GPIO PIN (GIỮ NGUYÊN) ---
                             Expanded(flex: 1, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("GPIO Pin", style: TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w600)), const SizedBox(height: 8), Container(height: 55, alignment: Alignment.center, decoration: BoxDecoration(color: Colors.white.withOpacity(0.6), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white, width: 2)), child: TextField(controller: pinController, keyboardType: TextInputType.number, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 18), decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.zero, hintText: "2", hintStyle: TextStyle(color: Colors.black26))))])),
                           ],
                         ),
@@ -170,7 +256,6 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
     );
   }
 
-  // --- HÀM HIỂN THỊ BẢNG VẼ MAP 2D ---
   void _showMapConfirmationDialog() {
     final TextEditingController roomNameController = TextEditingController();
     
@@ -220,23 +305,33 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
               style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
               onPressed: () {
                 if (roomNameController.text.isNotEmpty) {
-                  // LƯU PHÒNG
-                  print("Đã lưu phòng: ${roomNameController.text}");
-                  print("Tọa độ: $points2D");
+                  // --- LƯU PHÒNG VÀO BỘ NHỚ ---
+                  final newRoom = RoomShape(roomNameController.text, points2D);
                   
-                  // --- LOGIC MỚI: LƯU XONG GIỮ NGUYÊN CHẾ ĐỘ MAP ĐỂ VẼ TIẾP ---
+                  // Kiểm tra xem phòng đã tồn tại chưa để cập nhật hoặc thêm mới
+                  int index = savedRooms.indexWhere((r) => r.name == newRoom.name);
+                  if (index != -1) {
+                    savedRooms[index] = newRoom;
+                  } else {
+                    savedRooms.add(newRoom);
+                  }
+                  
+                  // Thêm tên phòng vào danh sách mặc định nếu chưa có (để dùng cho list dropdown)
+                  if (!defaultRooms.contains(newRoom.name)) {
+                    defaultRooms.add(newRoom.name);
+                  }
+                  
+                  print("✅ Đã lưu phòng: ${newRoom.name} với ${newRoom.points.length} điểm");
+                  
+                  // Reset trạng thái
                   setState(() {
-                    tempMapPoints.clear(); // Xóa điểm cũ, vẫn giữ isMapMode = true
+                    tempMapPoints.clear(); 
                   });
-                  // Không gọi widget.onMapModeChanged(false) để giữ nút X và ẩn nút +
                   
                   Navigator.pop(ctx);
                   
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Đã lưu phòng! Hãy vẽ tiếp phòng khác hoặc bấm X để thoát."), 
-                      backgroundColor: Colors.green
-                    )
+                    const SnackBar(content: Text("Đã lưu phòng! Hãy vẽ tiếp hoặc thoát."), backgroundColor: Colors.green)
                   );
                 }
               }, 
@@ -264,9 +359,8 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
     return ListenableBuilder(
       listenable: Listenable.merge([deviceManager, peopleManager]),
       builder: (context, _) {
-        // 1. HOTSPOT THIẾT BỊ (ĐÃ SỬA LỖI Ô TÔ)
         final deviceHotspots = deviceManager.devices
-            .where((d) => !d.name.contains("Gara")) // <--- SỬA LỖI TẠI ĐÂY: Loại bỏ tất cả Gara khỏi list Hotspot bóng đèn
+            .where((d) => !d.name.contains("Gara"))
             .map((d) {
               return SmartHotspot(
                 id: d.id, position: d.position, normal: d.normal, color: d.color, iconName: _getIconName(d),
@@ -325,7 +419,6 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
               maxCameraOrbit: isMapMode ? "Infinity 0deg auto" : "auto auto auto",
             ),
 
-            // --- NÚT GÓC TRÊN PHẢI (CHẾ ĐỘ THƯỜNG) ---
             if (!isMapMode)
               Positioned(
                 top: 40, right: 20,
@@ -337,7 +430,7 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
                         icon: const Icon(Icons.map, color: Colors.orangeAccent),
                         onPressed: () {
                           setState(() { isMapMode = true; tempMapPoints.clear(); });
-                          widget.onMapModeChanged(true); // Ẩn nút +
+                          widget.onMapModeChanged(true); 
                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Vẽ Map: Chạm vào các góc phòng -> Ấn V để lưu.")));
                         }
                       ),
@@ -350,7 +443,6 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
                 )
               ),
 
-            // --- NÚT THOÁT CHẾ ĐỘ MAP (CHỮ X ĐỎ) ---
             if (isMapMode)
               Positioned(
                 top: 40, right: 20,
@@ -361,13 +453,12 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
                     tooltip: "Thoát chế độ vẽ",
                     onPressed: () {
                       setState(() { isMapMode = false; tempMapPoints.clear(); });
-                      widget.onMapModeChanged(false); // Hiện lại nút +
+                      widget.onMapModeChanged(false); 
                     }
                   ),
                 ),
               ),
 
-            // --- THANH CÔNG CỤ DƯỚI ---
             if (isMapMode)
                Positioned(
                  bottom: 30, left: 20, right: 20,
@@ -382,7 +473,6 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
                            const Text("Xoay, Zoom, Chấm góc", style: TextStyle(color: Colors.grey, fontSize: 11)),
                         ]),
                         
-                        // Nút V (Hoàn tất)
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: tempMapPoints.length >= 3 ? Colors.green : Colors.grey[800],
@@ -406,7 +496,7 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> with AutomaticKeepAli
     );
   }
 
-  void _showIpDialog(BuildContext context) { /* Code cũ */ final c = TextEditingController(text: mqttHandler.server); showDialog(context: context, barrierDismissible: false, builder: (ctx) => AlertDialog(title: const Text("Cài đặt MQTT Broker"), content: TextField(controller: c, decoration: const InputDecoration(labelText: "Địa chỉ IP", hintText: "192.168.1.xxx", border: OutlineInputBorder()), keyboardType: TextInputType.number), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Hủy", style: TextStyle(color: Colors.grey))), ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent), onPressed: () async { Navigator.pop(ctx); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Row(children: [SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)), SizedBox(width: 15), Text("Đang kết nối tới Broker...")]), duration: Duration(days: 1), backgroundColor: Colors.blueGrey)); bool isConnected = await mqttHandler.updateBrokerIP(c.text.trim()); ScaffoldMessenger.of(context).hideCurrentSnackBar(); if (isConnected) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.check_circle, color: Colors.white), const SizedBox(width: 10), Text("Đã kết nối thành công tới ${c.text}!")]), backgroundColor: Colors.green)); } else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Row(children: [Icon(Icons.error, color: Colors.white), SizedBox(width: 10), Text("Kết nối thất bại! Kiểm tra lại IP.")]), backgroundColor: Colors.redAccent)); } }, child: const Text("LƯU & KẾT NỐI", style: TextStyle(color: Colors.white)))])); }
+  void _showIpDialog(BuildContext context) { /* Code IP cũ */ final c = TextEditingController(text: mqttHandler.server); showDialog(context: context, barrierDismissible: false, builder: (ctx) => AlertDialog(title: const Text("Cài đặt MQTT Broker"), content: TextField(controller: c, decoration: const InputDecoration(labelText: "Địa chỉ IP", hintText: "192.168.1.xxx", border: OutlineInputBorder()), keyboardType: TextInputType.number), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Hủy", style: TextStyle(color: Colors.grey))), ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent), onPressed: () async { Navigator.pop(ctx); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Row(children: [SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)), SizedBox(width: 15), Text("Đang kết nối tới Broker...")]), duration: Duration(days: 1), backgroundColor: Colors.blueGrey)); bool isConnected = await mqttHandler.updateBrokerIP(c.text.trim()); ScaffoldMessenger.of(context).hideCurrentSnackBar(); if (isConnected) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.check_circle, color: Colors.white), const SizedBox(width: 10), Text("Đã kết nối thành công tới ${c.text}!")]), backgroundColor: Colors.green)); } else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Row(children: [Icon(Icons.error, color: Colors.white), SizedBox(width: 10), Text("Kết nối thất bại! Kiểm tra lại IP.")]), backgroundColor: Colors.redAccent)); } }, child: const Text("LƯU & KẾT NỐI", style: TextStyle(color: Colors.white)))])); }
 }
 
 class _RoomPreviewPainter extends CustomPainter {
