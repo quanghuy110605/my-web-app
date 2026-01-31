@@ -13,6 +13,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // --- THÊM DÒNG NÀY (Dành cho Kotlin DSL) ---
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -28,6 +30,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // Hỗ trợ đa ngôn ngữ (nếu cần thiết cho desugar)
+        multiDexEnabled = true 
     }
 
     buildTypes {
@@ -41,4 +46,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// --- THÊM KHỐI DEPENDENCIES NÀY VÀO CUỐI FILE ---
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }
