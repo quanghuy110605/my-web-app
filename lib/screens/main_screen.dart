@@ -14,6 +14,9 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
   bool _isAddingMode = false;
+  
+  // BIẾN QUAN TRỌNG: Kiểm soát việc ẩn hiện nút (+) khi đang vẽ Map
+  bool _hideFab = false; 
 
   @override
   void initState() {
@@ -27,17 +30,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // --- HÀM QUAN TRỌNG: CHỐNG TREO APP ---
+  // Tự động kết nối lại MQTT khi quay lại app (có delay để tránh đơ máy)
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      print("📱 App đã quay trở lại -> Đợi 1.5s để ổn định đồ họa...");
-      
-      // Delay 1.5 giây để điện thoại vẽ xong nhà 3D rồi mới nối mạng
-      // Giúp tránh việc CPU bị quá tải gây đơ máy
       Future.delayed(const Duration(milliseconds: 1500), () {
-        print("🚀 Đã ổn định -> Bắt đầu kết nối lại MQTT");
-        mqttHandler.connect();
+         mqttHandler.connect();
       });
     }
   }
@@ -53,11 +51,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           // Tab 1: Nhà 3D
           SmartHome3DPage(
             isAddingMode: _isAddingMode, 
-            onAddComplete: () {
+            onAddComplete: () => setState(() => _isAddingMode = false),
+            
+            // --- KẾT NỐI VỚI CHẾ ĐỘ VẼ MAP ---
+            // Khi bên kia báo true (đang vẽ) -> Ẩn nút FAB
+            // Khi bên kia báo false (thoát) -> Hiện nút FAB
+            onMapModeChanged: (isMapMode) {
               setState(() {
-                _isAddingMode = false;
+                _hideFab = isMapMode; 
+                // Nếu đang bật chế độ thêm thiết bị mà chuyển sang vẽ Map thì tắt luôn
+                if (isMapMode) _isAddingMode = false; 
               });
-            }
+            },
           ),
           
           // Tab 2: Danh sách thiết bị
@@ -68,55 +73,33 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         ]
       ),
       
-      floatingActionButton: _currentIndex == 0 
+      // LOGIC ẨN HIỆN NÚT (+):
+      // Chỉ hiện khi: (Đang ở Tab Home) VÀ (Không đang vẽ Map)
+      floatingActionButton: (_currentIndex == 0 && !_hideFab) 
           ? FloatingActionButton(
               heroTag: "btn_main", 
               backgroundColor: _isAddingMode ? Colors.red : Colors.blueAccent, 
-              
               onPressed: () { 
-                setState(() { 
-                  _isAddingMode = !_isAddingMode; 
-                }); 
-                
+                setState(() => _isAddingMode = !_isAddingMode); 
                 if (_isAddingMode) { 
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Chạm vào tường/trần để thêm thiết bị!"),
-                      duration: Duration(seconds: 2),
-                    )
-                  ); 
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Chạm vào tường để thêm thiết bị!"))); 
                 } 
               }, 
-              
-              child: Icon(
-                _isAddingMode ? Icons.close : Icons.add, 
-                color: Colors.white
-              )
+              child: Icon(_isAddingMode ? Icons.close : Icons.add, color: Colors.white)
             ) 
-          : null,
+          : null, // Trả về null để ẩn nút đi
       
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex, 
         onTap: (index) => setState(() => _currentIndex = index), 
-        
         backgroundColor: Colors.grey[900], 
         selectedItemColor: Colors.amber, 
         unselectedItemColor: Colors.grey, 
         type: BottomNavigationBarType.fixed, 
-        
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home), 
-            label: 'Trang chính'
-          ), 
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings_remote), 
-            label: 'Thiết bị'
-          ), 
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today), 
-            label: 'Lịch trình'
-          )
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Trang chính'), 
+          BottomNavigationBarItem(icon: Icon(Icons.settings_remote), label: 'Thiết bị'), 
+          BottomNavigationBarItem(icon: Icon(Icons.calendar_today), label: 'Lịch trình')
         ]
       ),
     );
