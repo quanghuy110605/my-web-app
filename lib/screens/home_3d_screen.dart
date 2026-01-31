@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../widgets/smart_3d_viewer.dart';
 import '../widgets/glass_panel.dart';
+// Import các panel
 import '../widgets/panels/light_panel.dart';
 import '../widgets/panels/fan_panel.dart';
 import '../widgets/panels/ac_panel.dart';
@@ -30,9 +32,7 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> {
   final List<DeviceType> availableTypes = [
     DeviceType("Đèn", Icons.lightbulb, Colors.amber),
     DeviceType("Quạt", Icons.cyclone, Colors.teal),
-    // --- SỬA MÀU MÁY SƯỞI THÀNH ĐỎ (Colors.red) ---
     DeviceType("Máy sưởi", Icons.thermostat, Colors.red), 
-    // -----------------------------------------------
     DeviceType("Rèm cửa", Icons.view_headline, Colors.purpleAccent),
     DeviceType("Cửa Chính", Icons.meeting_room, Colors.brown), 
     DeviceType("Điều hòa", Icons.ac_unit, Colors.cyan),
@@ -41,78 +41,139 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> {
   final List<String> rooms = ["Phòng Khách", "Phòng Ngủ", "Nhà Bếp", "Sân Vườn", "WC"];
   String selectedRoom = "Phòng Khách";
 
+  // --- HÀM HIỂN THỊ BẢNG THÊM THIẾT BỊ (STYLE TRẮNG MỜ) ---
   void _handleModelTap(String position, String normal) {
     if (!widget.isAddingMode) return;
     
     showModalBottomSheet(
       context: context, 
-      backgroundColor: Colors.grey[900], 
+      backgroundColor: Colors.transparent, 
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), 
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            return Container(
-              padding: const EdgeInsets.all(20), 
-              height: 400, 
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, 
-                children: [
-                  const Text("Thêm thiết bị mới", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 15),
-                  
-                  Row(
-                    children: [
-                      const Text("Vị trí: ", style: TextStyle(color: Colors.white70)),
-                      const SizedBox(width: 10),
-                      DropdownButton<String>(
-                        value: selectedRoom,
-                        dropdownColor: Colors.grey[800],
-                        style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
-                        items: rooms.map((String value) {
-                          return DropdownMenuItem<String>(value: value, child: Text(value));
-                        }).toList(),
-                        onChanged: (newValue) => setModalState(() => selectedRoom = newValue!),
-                      ),
-                    ],
+            // HIỆU ỨNG KÍNH MỜ MÀU TRẮNG (GIỐNG BẢNG ĐIỀU KHIỂN)
+            return ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
+                child: Container(
+                  height: 480, 
+                  padding: const EdgeInsets.all(25),
+                  decoration: BoxDecoration(
+                    // MÀU TRẮNG MỜ (White Opacity)
+                    color: Colors.white.withOpacity(0.85), 
+                    border: Border.all(color: Colors.white, width: 1.5),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, spreadRadius: 5)
+                    ]
                   ),
-                  const SizedBox(height: 15),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start, 
+                    children: [
+                      // Thanh gạch ngang (Màu xám vì nền trắng)
+                      Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[400], borderRadius: BorderRadius.circular(2)))),
+                      const SizedBox(height: 20),
 
-                  Expanded(
-                    child: GridView.builder(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 15, mainAxisSpacing: 15, childAspectRatio: 1.0), 
-                      itemCount: availableTypes.length, 
-                      itemBuilder: (context, index) {
-                        final type = availableTypes[index];
-                        return InkWell(
-                          onTap: () {
-                            deviceManager.addDevice(type.name, type.icon, position, normal, selectedRoom);
-                            // Gửi config có kèm màu sắc (để nếu cần ESP biết màu)
-                            String hexColor = '#${type.color.value.toRadixString(16).substring(2)}';
-                            Map<String, dynamic> cfg = { 
-                              "action": "add", "name": type.name, "room": selectedRoom, 
-                              "type": "switch", "color": hexColor 
-                            }; 
-                            mqttHandler.publishMessage("home/config", jsonEncode(cfg)); 
-                            
-                            Navigator.pop(ctx); 
-                            widget.onAddComplete(); 
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Đã thêm ${type.name}!")));
-                          }, 
-                          child: Container(
-                            decoration: BoxDecoration(color: Colors.grey[800], borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), 
-                            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                                Icon(type.icon, color: type.color, size: 32), 
-                                const SizedBox(height: 8), 
-                                Text(type.name, style: const TextStyle(color: Colors.white70, fontSize: 12))
-                            ])
-                          )
-                        );
-                      }
-                    )
+                      // Tiêu đề (Màu đen)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("Thêm thiết bị mới", style: TextStyle(color: Colors.black87, fontSize: 22, fontWeight: FontWeight.bold)),
+                          IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close, color: Colors.black54))
+                        ],
+                      ),
+                      const SizedBox(height: 15),
+                      
+                      // --- MENU CHỌN PHÒNG ---
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white, // Nền trắng đặc
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: Colors.grey.shade300),
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5, offset: const Offset(0, 2))]
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.location_on, color: Colors.redAccent, size: 20),
+                            const SizedBox(width: 10),
+                            DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: selectedRoom,
+                                dropdownColor: Colors.white, // Menu xổ xuống màu trắng
+                                icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black54),
+                                style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16),
+                                items: rooms.map((String value) {
+                                  return DropdownMenuItem<String>(value: value, child: Text(value));
+                                }).toList(),
+                                onChanged: (newValue) => setModalState(() => selectedRoom = newValue!),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 25),
+
+                      // --- LƯỚI THIẾT BỊ ---
+                      Expanded(
+                        child: GridView.builder(
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3, 
+                            crossAxisSpacing: 15, 
+                            mainAxisSpacing: 15, 
+                            childAspectRatio: 0.85
+                          ), 
+                          itemCount: availableTypes.length, 
+                          itemBuilder: (context, index) {
+                            final type = availableTypes[index];
+                            return InkWell(
+                              onTap: () {
+                                deviceManager.addDevice(type.name, type.icon, position, normal, selectedRoom);
+                                String hexColor = '#${type.color.value.toRadixString(16).substring(2)}';
+                                Map<String, dynamic> cfg = { "action": "add", "name": type.name, "room": selectedRoom, "type": "switch", "color": hexColor }; 
+                                mqttHandler.publishMessage("home/config", jsonEncode(cfg)); 
+                                
+                                Navigator.pop(ctx); 
+                                widget.onAddComplete(); 
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Đã thêm ${type.name}!")));
+                              }, 
+                              // Ô THIẾT BỊ (STYLE TRẮNG SẠCH)
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.6),
+                                  borderRadius: BorderRadius.circular(20), 
+                                  border: Border.all(color: Colors.white, width: 2),
+                                  boxShadow: [
+                                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
+                                  ]
+                                ), 
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center, 
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(15),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: type.color.withOpacity(0.1), // Nền icon màu nhạt
+                                      ),
+                                      child: Icon(type.icon, color: type.color, size: 32)
+                                    ), 
+                                    const SizedBox(height: 12), 
+                                    Text(type.name, style: const TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600), textAlign: TextAlign.center)
+                                  ]
+                                )
+                              )
+                            );
+                          }
+                        )
+                      )
+                    ]
                   )
-                ]
-              )
+                ),
+              ),
             );
           }
         );
@@ -156,7 +217,7 @@ class _SmartHome3DPageState extends State<SmartHome3DPage> {
   }
 }
 
-// ... (Overlay giữ nguyên) ...
+// ... Overlay ...
 class AddingModeOverlay extends StatefulWidget { const AddingModeOverlay({super.key}); @override State<AddingModeOverlay> createState() => _AddingModeOverlayState(); }
 class _AddingModeOverlayState extends State<AddingModeOverlay> with TickerProviderStateMixin { late AnimationController _r; late AnimationController _b; bool _fin = false; @override void initState() { super.initState(); _r = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500)); _b = AnimationController(vsync: this, duration: const Duration(seconds: 2)); _r.forward(); _r.addStatusListener((status) { if (status == AnimationStatus.completed) { setState(() => _fin = true); _b.repeat(); } }); } @override void dispose() { _r.dispose(); _b.dispose(); super.dispose(); } @override Widget build(BuildContext context) { return IgnorePointer(child: AnimatedBuilder(animation: Listenable.merge([_r, _b]), builder: (context, child) { return CustomPaint(painter: _SequencePainter(rV: _r.value, bV: _b.value, fin: _fin), size: Size.infinite); },)); } }
 class _SequencePainter extends CustomPainter { final double rV; final double bV; final bool fin; _SequencePainter({required this.rV, required this.bV, required this.fin}); @override void paint(Canvas canvas, Size size) { final center = Offset(size.width / 2, size.height / 2); final rect = Rect.fromLTWH(0, 0, size.width, size.height); if (fin) { final p = Paint()..style = PaintingStyle.stroke..strokeWidth = 6.0..shader = SweepGradient(colors: const [Colors.red, Colors.blue, Colors.green, Colors.red], transform: GradientRotation(bV * 2 * math.pi)).createShader(rect); canvas.drawRect(rect, p); } if (!fin) { final p = Paint()..style = PaintingStyle.stroke..strokeWidth = 25.0..color = Colors.cyanAccent.withOpacity((1.0 - rV).clamp(0.0, 1.0) * 0.3); canvas.drawCircle(center, math.max(size.width, size.height) * rV, p); } } @override bool shouldRepaint(covariant _SequencePainter old) => true; }
