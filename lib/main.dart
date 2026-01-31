@@ -1,32 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // Thêm dòng này để xin quyền Android 13+
 import 'screens/main_screen.dart';
-import 'services/mqtt_service.dart';
-// Đã xóa import device_model vì không cần dùng ở đây nữa
+import 'services/local_notification_service.dart'; // Import service
 
-void main() {
-  runApp(const MyApp());
-  _initMqtt();
-}
-
-void _initMqtt() async {
-  // ĐÃ XÓA: Đoạn code kiểm tra và thêm "Gara Ô tô" tự động
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   
-  // Chỉ còn lại việc kết nối MQTT
-  await mqttHandler.connect();
+  // 1. Khởi tạo Local Notification
+  await LocalNotificationService.initialize();
+
+  // 2. Xin quyền hiển thị thông báo (Quan trọng cho Android 13+)
+  FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  await flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission();
+
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-  
-  @override 
-  Widget build(BuildContext context) { 
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false, 
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: Colors.black, 
-        primaryColor: Colors.amber
-      ), 
+      debugShowCheckedModeBanner: false,
+      title: 'Smart Home 3D',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        primarySwatch: Colors.blue,
+      ),
       home: const MainScreen(),
-    ); 
+    );
   }
 }

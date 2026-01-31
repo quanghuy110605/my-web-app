@@ -2,6 +2,36 @@ import 'package:flutter/material.dart';
 
 class ScheduleScreen extends StatelessWidget {
   const ScheduleScreen({super.key});
-  @override Widget build(BuildContext context) { return Scaffold(backgroundColor: Colors.black, appBar: AppBar(title: const Text("Lịch trình"), backgroundColor: Colors.black, elevation: 0, centerTitle: false), floatingActionButton: FloatingActionButton(heroTag: "btn_schedule", onPressed: () {}, backgroundColor: Colors.blueAccent, child: const Icon(Icons.add, color: Colors.white)), body: ListView(padding: const EdgeInsets.all(16), children: [_buildScheduleItem("07:00 AM", "Bật Đèn Trần", true), _buildScheduleItem("08:30 AM", "Mở Rèm Cửa", true), _buildScheduleItem("06:00 PM", "Bật Tivi & Đèn", false), _buildScheduleItem("10:00 PM", "Tắt toàn bộ thiết bị", true)])); }
-  Widget _buildScheduleItem(String time, String action, bool isActive) { return Container(margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.grey[900], borderRadius: BorderRadius.circular(16), border: Border(left: BorderSide(color: isActive ? Colors.blueAccent : Colors.grey, width: 4))), child: Row(children: [Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(time, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 4), Text(action, style: const TextStyle(color: Colors.white70))]), const Spacer(), Switch(value: isActive, onChanged: (v){}, activeColor: Colors.white, activeTrackColor: Colors.blueAccent, inactiveTrackColor: Colors.grey[800])])); }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: const Text("Lịch trình"),
+        backgroundColor: Colors.black,
+        elevation: 0,
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.access_time, 
+              size: 80, 
+              color: Colors.grey[800]
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              "Tính năng đang phát triển...",
+              style: TextStyle(
+                color: Colors.white54, 
+                fontSize: 16
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
